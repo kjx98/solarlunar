@@ -34,9 +34,82 @@ var LUNAR_INFO = []int{
 	0x05aa0, 0x076a3, 0x096d0, 0x04bd7, 0x04ad0, 0x0a4d0, 0x1d0b6, 0x0d250, 0x0d520, 0x0dd45,
 	0x0b5a0, 0x056d0, 0x055b2, 0x049b0, 0x0a577, 0x0a4b0, 0x0aa50, 0x1b255, 0x06d20, 0x0ada0}
 
+type JulianDay uint32
+
+var startDateJDN JulianDay
+var LUNAR_JDN []JulianDay
+
+func init() {
+	startDateJDN = ParseJulianDay(STARTDATESTR)
+	LUNAR_JDN = make([]JulianDay, MAX_YEAR-MIN_YEAR+1)
+	yearJDN := NewJDN(1900, 1, 30)
+	for i := MIN_YEAR; i <= MAX_YEAR; i++ {
+		LUNAR_JDN[i-MIN_YEAR] = yearJDN
+		yearJDN = yearJDN.Add(getYearDays(i))
+	}
+}
+
+// newJDN
+//  Calc Fast Julian Day with year, month, day
+//       year > 0 for AD
+//       year<=0, year-1 for BC
+func NewJDN(year, month, day int) JulianDay {
+	res := (1461 * (year + 4800 + (month-14)/12)) / 4
+	res += (367 * (month - 2 - 12*((month-14)/12))) / 12
+	res -= (3 * ((year + 4900 + (month-14)/12) / 100)) / 4
+	res += day - 32075
+	return JulianDay(res)
+}
+
+//  CalcYMD
+//
+//  Fast convert julian date to year, month, day
+func (jDN JulianDay) CalcYMD() (y, m, d int) {
+	j := int(jDN)
+	f := j + 1401 + (((4*j+274277)/146097)*3)/4 - 38
+	e := 4*f + 3
+	g := (e % 1461) / 4
+	h := 5*g + 2
+	d = (h%153)/5 + 1
+	m = (h/153+2)%12 + 1
+	y = e/1461 - 4716 + (12+2-m)/12
+	return
+}
+
+func (jDN JulianDay) Add(v int) JulianDay {
+	return JulianDay(int(jDN) + v)
+}
+
+func (jDN JulianDay) Diff(j JulianDay) int {
+	return int(jDN) - int(j)
+}
+
+func (julianDay JulianDay) String() string {
+	year, month, day := julianDay.CalcYMD()
+	res := year*10000 + month*100 + day
+	return strconv.FormatInt(int64(res), 10)
+	//return fmt.Sprintf("%04d%02d%02d", year, month, day)
+}
+
+//	ParseJulianDay
+//	Converts from formatted Date Data long julian Date format
+func ParseJulianDay(date string) (res JulianDay) {
+	if len(date) == 8 {
+		years, _ := strconv.Atoi(string(date[:4]))
+		months, _ := strconv.Atoi(string(date[4:6]))
+		day, _ := strconv.Atoi(string(date[6:]))
+		res = NewJDN(years, months, day)
+	} else {
+		years, _ := strconv.Atoi(string(date[:4]))
+		months, _ := strconv.Atoi(string(date[5:7]))
+		day, _ := strconv.Atoi(string(date[8:10]))
+		res = NewJDN(years, months, day)
+	}
+	return
+}
+
 func LunarToSolar(date string, leapMonthFlag bool) string {
-	loc, _ := time.LoadLocation("Local")
-	lunarTime, err := time.ParseInLocation(DATELAYOUT, date, loc)
+	lunarTime, err := time.Parse(DATELAYOUT, date)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
@@ -97,14 +170,67 @@ func LunarToSolar(date string, leapMonthFlag bool) string {
 		}
 	}
 
-	myDate, err := time.ParseInLocation(DATELAYOUT, STARTDATESTR, loc)
+	myDate, err := time.Parse(DATELAYOUT, STARTDATESTR)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-
 	dayDuaration, _ := time.ParseDuration("24h")
 	myDate = myDate.Add(dayDuaration * time.Duration(offset))
 	return myDate.Format(DATELAYOUT)
+}
+
+func Lunar2Solar(lunarYear, lunarMonth, lunarDay int, leapMonthFlag bool) (y, m, d int) {
+	err := checkLunarDate(lunarYear, lunarMonth, lunarDay, leapMonthFlag)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+
+	offset := LUNAR_JDN[lunarYear-MIN_YEAR].Diff(startDateJDN)
+	//计算该年闰几月
+	leapMonth := getLeapMonth(lunarYear)
+	if leapMonthFlag && leapMonth != lunarMonth {
+		panic("您输入的闰月标志有误！")
+	}
+	if leapMonth == 0 || (lunarMonth < leapMonth) || (lunarMonth == leapMonth && !leapMonthFlag) {
+		for i := 1; i < lunarMonth; i++ {
+			tempMonthDaysCount := getMonthDays(lunarYear, uint(i))
+			offset += tempMonthDaysCount
+		}
+
+		// 检查日期是否大于最大天
+		if lunarDay > getMonthDays(lunarYear, uint(lunarMonth)) {
+			panic("不合法的农历日期！")
+		}
+		offset += lunarDay // 加上当月的天数
+	} else { //当年有闰月，且月份晚于或等于闰月
+		for i := 1; i < lunarMonth; i++ {
+			tempMonthDaysCount := getMonthDays(lunarYear, uint(i))
+			offset += tempMonthDaysCount
+		}
+		if lunarMonth > leapMonth {
+			temp := getLeapMonthDays(lunarYear) // 计算闰月天数
+			offset += temp                      // 加上闰月天数
+
+			if lunarDay > getMonthDays(lunarYear, uint(lunarMonth)) {
+				panic("不合法的农历日期！")
+			}
+			offset += lunarDay
+		} else { // 如果需要计算的是闰月，则应首先加上与闰月对应的普通月的天数
+			// 计算月为闰月
+			temp := getMonthDays(lunarYear, uint(lunarMonth)) // 计算非闰月天数
+			offset += temp
+
+			if lunarDay > getLeapMonthDays(lunarYear) {
+				panic("不合法的农历日期！")
+			}
+			offset += lunarDay
+		}
+	}
+
+	myJDN := startDateJDN.Add(offset)
+	y, m, d = myJDN.CalcYMD()
+	return
 }
 
 func SolarToChineseLuanr(date string) string {
@@ -137,7 +263,7 @@ func SolarToSimpleLuanr(date string) string {
 	return result
 }
 
-func SolarToLuanr(date string) (string,bool) {
+func SolarToLuanr(date string) (string, bool) {
 	lunarYear, lunarMonth, lunarDay, leapMonth, leapMonthFlag := calculateLunar(date)
 	result := strconv.Itoa(lunarYear) + "-"
 	if lunarMonth < 10 {
@@ -152,30 +278,82 @@ func SolarToLuanr(date string) (string,bool) {
 	}
 
 	if leapMonthFlag && (lunarMonth == leapMonth) {
-		return result,true
+		return result, true
 	} else {
-		return result,false
+		return result, false
 	}
 }
 
-
-func calculateLunar(date string) (lunarYear, lunarMonth, lunarDay, leapMonth int, leapMonthFlag bool) {
-	loc, _ := time.LoadLocation("Local")
+func Solar2Lunar(y, m, d int) (lunarYear, lunarMonth, lunarDay int, leapMonthFlag bool) {
 	i := 0
 	temp := 0
 	leapMonthFlag = false
 	isLeapYear := false
 
-	myDate, err := time.ParseInLocation(DATELAYOUT, date, loc)
+	if y > MAX_YEAR || y < MIN_YEAR {
+		return
+	}
+	myDate := NewJDN(y, m, d)
+
+	if int(myDate) >= int(LUNAR_JDN[y-MIN_YEAR]) {
+		lunarYear = y
+	} else if y > MIN_YEAR {
+		lunarYear = y - 1
+	} else {
+		return
+	}
+	offset := myDate.Diff(LUNAR_JDN[lunarYear-MIN_YEAR])
+	leapMonth := getLeapMonth(lunarYear) //计算该年闰哪个月
+
+	//设定当年是否有闰月
+	if leapMonth > 0 {
+		isLeapYear = true
+	} else {
+		isLeapYear = false
+	}
+
+	for i = 1; i <= 12; i++ {
+		if i == leapMonth+1 && isLeapYear {
+			temp = getLeapMonthDays(lunarYear)
+			isLeapYear = false
+			leapMonthFlag = true
+			i--
+		} else {
+			temp = getMonthDays(lunarYear, uint(i))
+		}
+		offset -= temp
+		if offset <= 0 {
+			break
+		}
+	}
+	offset += temp
+	lunarMonth = i
+	lunarDay = offset
+	if leapMonthFlag && lunarMonth != leapMonth {
+		leapMonthFlag = false
+	}
+	return
+}
+
+func calculateLunar(date string) (lunarYear, lunarMonth, lunarDay, leapMonth int, leapMonthFlag bool) {
+	i := 0
+	temp := 0
+	leapMonthFlag = false
+	isLeapYear := false
+
+	myDate, err := time.Parse(DATELAYOUT, date)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-	startDate, err := time.ParseInLocation(DATELAYOUT, STARTDATESTR, loc)
+	startDate, err := time.Parse(DATELAYOUT, STARTDATESTR)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 
 	offset := daysBwteen(myDate, startDate)
+	//myDate := ParseJulianDay(date)
+	//startDate := ParseJulianDay(STARTDATESTR)
+	//offset := int(myDate) - int(startDate)
 	for i = MIN_YEAR; i < MAX_YEAR; i++ {
 		temp = getYearDays(i) //求当年农历年天数
 		if offset-temp < 1 {
@@ -278,8 +456,13 @@ func getLeapMonth(year int) int {
 
 // 计算差的天数
 func daysBwteen(myDate time.Time, startDate time.Time) int {
-	subValue := float64(myDate.Unix()-startDate.Unix())/86400.0 + 0.5
-	return int(subValue)
+	myJDN := NewJDN(myDate.Year(), int(myDate.Month()), myDate.Day())
+	startJDN := ParseJulianDay(STARTDATESTR)
+	//startJDN := NewJDN(startDate.Year(), int(startDate.Month()), startDate.Day())
+	return int(myJDN) - int(startJDN)
+	//subValue := float64(myDate.Unix()-startDate.Unix())/86400.0 + 0.5
+	//subValue := (myDate.Unix()-startDate.Unix())/86400 + 1
+	//return int(subValue)
 }
 
 func cyclicalm(num int) string {
