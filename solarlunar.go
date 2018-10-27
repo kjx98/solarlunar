@@ -80,7 +80,7 @@ func (jDN JulianDay) Add(v int) JulianDay {
 	return JulianDay(int(jDN) + v)
 }
 
-func (jDN JulianDay) Diff(j JulianDay) int {
+func (jDN JulianDay) Sub(j JulianDay) int {
 	return int(jDN) - int(j)
 }
 
@@ -186,7 +186,7 @@ func Lunar2Solar(lunarYear, lunarMonth, lunarDay int, leapMonthFlag bool) (y, m,
 		return
 	}
 
-	offset := LUNAR_JDN[lunarYear-MIN_YEAR].Diff(startDateJDN)
+	offset := LUNAR_JDN[lunarYear-MIN_YEAR].Sub(startDateJDN)
 	//计算该年闰几月
 	leapMonth := getLeapMonth(lunarYear)
 	if leapMonthFlag && leapMonth != lunarMonth {
@@ -302,7 +302,7 @@ func Solar2Lunar(y, m, d int) (lunarYear, lunarMonth, lunarDay int, leapMonthFla
 	} else {
 		return
 	}
-	offset := myDate.Diff(LUNAR_JDN[lunarYear-MIN_YEAR])
+	offset := myDate.Sub(LUNAR_JDN[lunarYear-MIN_YEAR])
 	leapMonth := getLeapMonth(lunarYear) //计算该年闰哪个月
 
 	//设定当年是否有闰月
