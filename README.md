@@ -1,5 +1,5 @@
 # solarlunar
-[![Build Status](https://api.travis-ci.org/kjx98/solarlunar.svg?branch=master)](https://api.travis-ci.org/kjx98/solarlunar)
+[![Build Status](https://travis-ci.org/kjx98/solarlunar.svg?branch=master)](https://travis-ci.org/kjx98/solarlunar)
 
 forked from https://github.com/nosixtools/solarlunar ， 修正time.ParseInLocation带来的润秒偏差，利用儒略日表加速
 
